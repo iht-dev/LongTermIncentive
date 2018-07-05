@@ -1,0 +1,13 @@
+# General
+.DS_Store
+
+# vscode
+.vscode
+
+# custom
+ethereum/build
+node_modules
+mochawesome-report
+mochawesome-report*
+
+.test*

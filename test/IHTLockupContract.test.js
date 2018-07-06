@@ -41,7 +41,7 @@ const math = {
     mul: function (one, mulNumber) {
         return toBN(one).mul(toBN(mulNumber)).toString()
     },
-    div: function (one, divNumber) {
+    div: function(one, divNumber) {
         return toBN(one).div(toBN(divNumber)).toString()
     }
 }
@@ -75,7 +75,7 @@ var LOCK_INFO = {
     boundsRatesFristRange: [70, 90, 115],
     boundsRatesSecondRange: [75, 95, 120],
     boundsRatesRange: function () {
-        return [...this.boundsRatesFristRange, ...this.boundsRatesSecondRange, ...[0, 0, 0]]
+        return [...this.boundsRatesFristRange, ...this.boundsRatesSecondRange, ...[0,0,0]]
     }
 }
 
@@ -123,7 +123,7 @@ describe.only('All tests', () => {
             assert.ok(ihtLockContract.options.address);
         });
         it('Token mock can tansfer token to wallet', async () => {
-            await util.tokenMock.transfer(accountPersonTwo, 1)
+           await util.tokenMock.transfer(accountPersonTwo, 1)
         })
         it('LockContract owner can start the deposit session', async () => {
             await util.ihtLockContract.start()
@@ -150,26 +150,58 @@ describe.only('All tests', () => {
             await util.tokenMock.tansferToContract(accountPersonThree)
         })
         it('LockContract can deposit first time period token after user approve ', async () => {
+            await util.tokenMock.approveToContract(accountPersonOne, LOCK_INFO.amountLimitMin())
+            await util.ihtLockContract.despoitFirstTimePeriod(accountPersonOne)
+        }),
+        it('LockContract can deposit second time period token after user approve ', async () => {
+           await util.tokenMock.approveToContract(accountPersonTwo, LOCK_INFO.amountLimitMax())
+           await util.ihtLockContract.despoitSecondTimePeriod(accountPersonTwo)
+        }),
+        it('LockContract can deposit thrid token after user approve ', async () => {
+            await util.tokenMock.approveToContract(accountPersonThree, math.add(LOCK_INFO.amountLimitMax(), 100))
+            await util.ihtLockContract.despoitThridTimePeriod(accountPersonThree)
+        }),
+        it('User can withdraw token after approve/despoit and before the end of the despoit stop time', async () => {
+            let user = accountPersonOne
+            await util.tokenMock.approveToContract(user, LOCK_INFO.amountLimitMin())
+            await util.tokenMock.tansferToContract(user)
+            await util.ihtLockContract.withdrawToken(user)
+        })
+    })
+    describe('Negative cases', () => {
+        beforeEach(async () => {
+            // do start
+            await util.ihtLockContract.setBonusStrategy(LOCK_INFO.boundsRatesRange(), LOCK_INFO.amountRangeInput());
+            await util.ihtLockContract.start()
+        })
+        it('User can not do approve/despoit amount which is less than limit min amount', async () => {
+            try {
+                await util.tokenMock.approveToContract(accountPersonOne, LOCK_INFO.getAmountLessThanLimitMin())
+                await util.ihtLockContract.despoitFirstTimePeriod(accountPersonOne)
+            } catch (error) {
+                assert.ok(error)
+                return
+            }
+            failCanNotBeHere()
+        })
+        it('User can not do sencod approve/despoit', async () => {
+            await util.tokenMock.approveToContract(accountPersonOne, LOCK_INFO.amountLimitMin())
+            await util.ihtLockContract.despoitFirstTimePeriod(accountPersonOne)
+            try {
                 await util.tokenMock.approveToContract(accountPersonOne, LOCK_INFO.amountLimitMin())
                 await util.ihtLockContract.despoitFirstTimePeriod(accountPersonOne)
-            }),
-            it('LockContract can deposit second time period token after user approve ', async () => {
-                await util.tokenMock.approveToContract(accountPersonTwo, LOCK_INFO.amountLimitMax())
-                await util.ihtLockContract.despoitSecondTimePeriod(accountPersonTwo)
-            }),
-            it('LockContract can deposit thrid token after user approve ', async () => {
-                await util.tokenMock.approveToContract(accountPersonThree, math.add(LOCK_INFO.amountLimitMax(), 100))
-                await util.ihtLockContract.despoitThridTimePeriod(accountPersonThree)
-            }),
-            it('User can withdraw token after approve/despoit and before the end of the despoit stop time', async () => {
-                let user = accountPersonOne
-                await util.tokenMock.approveToContract(user, LOCK_INFO.amountLimitMin())
-                await util.tokenMock.tansferToContract(user)
-                await util.ihtLockContract.withdrawToken(user)
-            })
+            } catch (error) {
+                assert.ok(error)
+                return
+            }
+            failCanNotBeHere()
+        })
     })
 })
-
+ 
+function failCanNotBeHere() {
+    assert.fail(`It shouldn't be here`)
+}
 
 const util = {
     getGasInfo: async () => {
@@ -202,9 +234,9 @@ const util = {
         },
         _despoit: async (timePeriod, from) => {
             let amount = await tokenMock.methods.allowance(from, ihtLockContract.options.address).call()
-            assert.ok(timePeriod >= 0 && timePeriod < 3);
+            assert.ok(timePeriod>=0 && timePeriod <3);
             let depoistMethod
-            if (timePeriod == 0) {
+            if(timePeriod == 0){
                 depoistMethod = ihtLockContract.methods.deposit180
             } else if (timePeriod == 1) {
                 depoistMethod = ihtLockContract.methods.deposit360
@@ -269,7 +301,7 @@ const util = {
             assert.ok(tx)
         },
         // must do approveToContract frist
-        tansferToContract: async function (from) {
+        tansferToContract: async function(from) {
             let amount = await tokenMock.methods.allowance(from, ihtLockContract.options.address).call()
             let {
                 gasPriceHex,

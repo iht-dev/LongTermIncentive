@@ -40,6 +40,9 @@ const math = {
     },
     mul: function (one, mulNumber) {
         return toBN(one).mul(toBN(mulNumber)).toString()
+    },
+    div: function (one, divNumber) {
+        return toBN(one).div(toBN(divNumber)).toString()
     }
 }
 
@@ -72,7 +75,7 @@ var LOCK_INFO = {
     boundsRatesFristRange: [70, 90, 115],
     boundsRatesSecondRange: [75, 95, 120],
     boundsRatesRange: function () {
-        return [...this.boundsRatesFristRange, ...this.boundsRatesSecondRange, ...[0,0,0]]
+        return [...this.boundsRatesFristRange, ...this.boundsRatesSecondRange, ...[0, 0, 0]]
     }
 }
 
@@ -120,7 +123,7 @@ describe.only('All tests', () => {
             assert.ok(ihtLockContract.options.address);
         });
         it('Token mock can tansfer token to wallet', async () => {
-           await util.tokenMock.transfer(accountPersonTwo, 1)
+            await util.tokenMock.transfer(accountPersonTwo, 1)
         })
         it('LockContract owner can start the deposit session', async () => {
             await util.ihtLockContract.start()
@@ -141,12 +144,32 @@ describe.only('All tests', () => {
             await util.tokenMock.tansferToContract(accountPersonOne)
             await util.tokenMock.approveToContract(accountPersonTwo, LOCK_INFO.amountLimitMax())
             await util.tokenMock.tansferToContract(accountPersonTwo)
-            await util.tokenMock.approveToContract(accountPersonThree, math.add(LOCK_INFO.amountLimitMax(), 1))
-            await util.tokenMock.tansferToContract(accountPersonThree)
         });
+        it('If amount exceeds the max amount, then amount should be equal to max amount', async () => {
+            await util.tokenMock.approveToContract(accountPersonThree, math.add(LOCK_INFO.amountLimitMax(), 100))
+            await util.tokenMock.tansferToContract(accountPersonThree)
+        })
+        it('LockContract can deposit first time period token after user approve ', async () => {
+                await util.tokenMock.approveToContract(accountPersonOne, LOCK_INFO.amountLimitMin())
+                await util.ihtLockContract.despoitFirstTimePeriod(accountPersonOne)
+            }),
+            it('LockContract can deposit second time period token after user approve ', async () => {
+                await util.tokenMock.approveToContract(accountPersonTwo, LOCK_INFO.amountLimitMax())
+                await util.ihtLockContract.despoitSecondTimePeriod(accountPersonTwo)
+            }),
+            it('LockContract can deposit thrid token after user approve ', async () => {
+                await util.tokenMock.approveToContract(accountPersonThree, math.add(LOCK_INFO.amountLimitMax(), 100))
+                await util.ihtLockContract.despoitThridTimePeriod(accountPersonThree)
+            }),
+            it('User can withdraw token after approve/despoit and before the end of the despoit stop time', async () => {
+                let user = accountPersonOne
+                await util.tokenMock.approveToContract(user, LOCK_INFO.amountLimitMin())
+                await util.tokenMock.tansferToContract(user)
+                await util.ihtLockContract.withdrawToken(user)
+            })
     })
 })
- 
+
 
 const util = {
     getGasInfo: async () => {
@@ -167,40 +190,40 @@ const util = {
         },
         setBonusStrategy: async (bonusRates, amount) => {
             await ihtLockContract.methods.setBonusStrategy(bonusRates, amount).send(util.params.sendIHTLockContract());
-        }
-    },
-    tokenMock: {
-        transfer: async (to, amount) => {
-            let balancePrevious = await tokenMock.methods.balanceOf(to).call();
-            let tx = await tokenMock.methods.transfer(to, amount).send(util.params.sendTokenMock())
-            assert.ok(tx)
-            let balanceCurrent = await tokenMock.methods.balanceOf(to).call()
-            assert.ok(balanceCurrent = math.add(balancePrevious, amount))
         },
-        approveToContract: async function (from, amount) {
-            let tx = await tokenMock.methods.approve(ihtLockContract.options.address, amount).send(util.params.send(from))
-            assert.ok(tx)
-        },
-        // must do approveToContract frist
-        tansferToContract: async function(from) {
-            let amount = await tokenMock.methods.allowance(from, ihtLockContract.options.address).call()
-            let {
-                gasPriceHex,
-                gasLimitHex
-            } = await util.getGasInfo();
+        withdrawToken: async (from) => {
             let balancePrevious = await tokenMock.methods.balanceOf(from).call();
-            const nonce = await web3.eth.getTransactionCount(from);
-            let tx2 = await web3.eth.sendTransaction({
-                from: from,
-                nonce: web3.utils.toHex(nonce),
-                to: ihtLockContract.options.address,
-                gasPrice: gasPriceHex,
-                gas: gasLimitHex,
-                value: '0x00'
-            })
-            assert.ok(tx2)
+            let record = await ihtLockContract.methods.records(from).call();
+            let withdrawAmount = record.ihtAmount;
+            let tx = await ihtLockContract.methods.withdrawIHT().send(util.params.send(from))
+            assert.ok(tx)
             let balanceCurrent = await tokenMock.methods.balanceOf(from).call();
-            assert.ok(balancePrevious = math.add(balanceCurrent, amount))
+            assert.ok(balanceCurrent == math.add(balancePrevious, withdrawAmount))
+        },
+        _despoit: async (timePeriod, from) => {
+            let amount = await tokenMock.methods.allowance(from, ihtLockContract.options.address).call()
+            assert.ok(timePeriod >= 0 && timePeriod < 3);
+            let depoistMethod
+            if (timePeriod == 0) {
+                depoistMethod = ihtLockContract.methods.deposit180
+            } else if (timePeriod == 1) {
+                depoistMethod = ihtLockContract.methods.deposit360
+            } else if (timePeriod == 2) {
+                depoistMethod = ihtLockContract.methods.deposit540
+            }
+            await depoistMethod().send(util.params.send(from))
+            await util.ihtLockContract._validate(from, timePeriod, amount)
+        },
+        despoitFirstTimePeriod: async function (from) {
+            await this._despoit(0, from)
+        },
+        despoitSecondTimePeriod: async function (from) {
+            await this._despoit(1, from)
+        },
+        despoitThridTimePeriod: async function (from) {
+            await this._despoit(2, from)
+        },
+        _validate: async (from, timePeriod, amount) => {
             let record = await ihtLockContract.methods.records(from).call();
             /*
             Record {
@@ -219,8 +242,7 @@ const util = {
                 amount = LOCK_INFO.amountLimitMax()
             }
             assert.ok(record.ihtAmount == amount)
-            // default to deposit360
-            let rateIndex = 1;
+            let rateIndex = timePeriod;
             let amountRange = LOCK_INFO.amountRange
             let rateRange;
             if (math.sub(amount, amountRange[0]) >= 0 && math.sub(amount, amountRange[1]) <= 0) {
@@ -232,6 +254,41 @@ const util = {
                 assert.ok(record.bonusRate == rateRange[rateIndex])
                 assert.ok(record.bonusReleased == false)
             }
+        }
+    },
+    tokenMock: {
+        transfer: async (to, amount) => {
+            let balancePrevious = await tokenMock.methods.balanceOf(to).call();
+            let tx = await tokenMock.methods.transfer(to, amount).send(util.params.sendTokenMock())
+            assert.ok(tx)
+            let balanceCurrent = await tokenMock.methods.balanceOf(to).call()
+            assert.ok(balanceCurrent = math.add(balancePrevious, amount))
+        },
+        approveToContract: async function (from, amount) {
+            let tx = await tokenMock.methods.approve(ihtLockContract.options.address, amount).send(util.params.send(from))
+            assert.ok(tx)
+        },
+        // must do approveToContract frist
+        tansferToContract: async function (from) {
+            let amount = await tokenMock.methods.allowance(from, ihtLockContract.options.address).call()
+            let {
+                gasPriceHex,
+                gasLimitHex
+            } = await util.getGasInfo();
+            let balancePrevious = await tokenMock.methods.balanceOf(from).call();
+            const nonce = await web3.eth.getTransactionCount(from);
+            let tx2 = await web3.eth.sendTransaction({
+                from: from,
+                nonce: web3.utils.toHex(nonce),
+                to: ihtLockContract.options.address,
+                gasPrice: gasPriceHex,
+                gas: gasLimitHex,
+                value: '0x00'
+            })
+            assert.ok(tx2)
+            let balanceCurrent = await tokenMock.methods.balanceOf(from).call();
+            assert.ok(balancePrevious = math.add(balanceCurrent, amount))
+            await util.ihtLockContract._validate(from, 1, amount)
         }
     },
     params: {
